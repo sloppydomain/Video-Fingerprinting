@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Fingerprint Engine</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 1rem; background: #f9f9f9; color: #333; }
+    .card { background: #fff; border: 1px solid #ddd; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    h2 { margin-top: 0; color: #111; }
+    .form-group { margin-bottom: 1.5rem; }
+    label { display: block; font-weight: bold; margin-bottom: 0.5rem; }
+    input[type="file"] { display: block; width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    button { background: #000; color: #fff; padding: 1rem; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 1.1rem; font-weight: bold; transition: background 0.2s; }
+    button:hover { background: #333; }
+    button:disabled { background: #888; cursor: not-allowed; }
+    #loader { display: none; margin-top: 1.5rem; font-weight: bold; color: #0056b3; text-align: center; }
+    
+    .result-box { margin-top: 2rem; display: none; padding-top: 2rem; border-top: 2px solid #eee; }
+    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .metric-card { background: #f0f4f8; padding: 1rem; border-radius: 6px; text-align: center; border: 1px solid #d9e2ec; }
+    .metric-value { font-size: 1.5rem; font-weight: bold; color: #102a43; margin-top: 0.5rem; }
+    
+    video { width: 100%; border-radius: 8px; background: #000; margin-bottom: 1rem; display: none; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 1rem; overflow-x: auto; border-radius: 4px; font-size: 0.9rem; }
+    .status-error { color: #d32f2f; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>Video Fingerprint Matcher</h2>
+    <form id="uploadForm">
+      <div class="form-group">
+        <label for="longVideo">Source Video (Long):</label>
+        <input type="file" id="longVideo" accept="video/mp4,video/x-m4v,video/*" required>
+      </div>
+      <div class="form-group">
+        <label for="shortClip">Target Clip (Short):</label>
+        <input type="file" id="shortClip" accept="video/mp4,video/x-m4v,video/*" required>
+      </div>
+      <button type="submit" id="submitBtn">Analyze Fingerprints</button>
+    </form>
+    
+    <div id="loader">Processing audio and visual hashes. Please wait...</div>
+    
+    <div id="result" class="result-box">
+      <h3 id="resultTitle">Analysis Complete</h3>
+      
+      <div id="metricsContainer" class="metrics-grid">
+        <div class="metric-card">
+          <div>Confidence Score</div>
+          <div id="uiScore" class="metric-value">0%</div>
+        </div>
+        <div class="metric-card">
+          <div>Match Timestamp</div>
+          <div id="uiTimestamp" class="metric-value">0:00</div>
+        </div>
+      </div>
+
+      <video id="playbackVideo" controls></video>
+      <pre id="resultPayload"></pre>
+    </div>
+  </div>
+
+  <script>
+    let currentVideoUrl = null;
+
+    function formatTimeDisplay(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const longVideoFile = document.getElementById('longVideo').files[0];
+      const shortClipFile = document.getElementById('shortClip').files[0];
+      
+      const loader = document.getElementById('loader');
+      const resultBox = document.getElementById('result');
+      const resultTitle = document.getElementById('resultTitle');
+      const resultPayload = document.getElementById('resultPayload');
+      const submitBtn = document.getElementById('submitBtn');
+      const playbackVideo = document.getElementById('playbackVideo');
+      const metricsContainer = document.getElementById('metricsContainer');
+      const uiScore = document.getElementById('uiScore');
+      const uiTimestamp = document.getElementById('uiTimestamp');
+      
+      const formData = new FormData();
+      formData.append('long_video', longVideoFile);
+      formData.append('short_clip', shortClipFile);
+
+      loader.style.display = 'block';
+      resultBox.style.display = 'none';
+      submitBtn.disabled = true;
+      playbackVideo.style.display = 'none';
+      metricsContainer.style.display = 'none';
+
+      // Clear previous memory allocation
+      if (currentVideoUrl) {
+        URL.revokeObjectURL(currentVideoUrl);
+      }
+
+      try {
+        const response = await fetch('/api/match', {
+          method: 'POST',
+          body: formData
+        });
+        
+        const responseData = await response.json();
+        resultBox.style.display = 'block';
+        
+        if (response.ok && responseData.status === "success") {
+          const matchData = responseData.data;
+          const startSec = matchData.match.start_sec;
+          const confidence = matchData.scores.final_match_percent;
+
+          resultTitle.textContent = 'Match Found';
+          resultTitle.className = '';
+          resultPayload.style.display = 'none'; // Hide JSON on success
+          
+          metricsContainer.style.display = 'grid';
+          uiScore.textContent = `${confidence.toFixed(1)}%`;
+          uiTimestamp.textContent = formatTimeDisplay(startSec);
+
+          // Create local URL for immediate playback
+          currentVideoUrl = URL.createObjectURL(longVideoFile);
+          playbackVideo.src = currentVideoUrl;
+          playbackVideo.style.display = 'block';
+          
+          playbackVideo.onloadedmetadata = () => {
+            playbackVideo.currentTime = startSec;
+            playbackVideo.play().catch(e => console.log("Autoplay blocked by browser", e));
+          };
+
+        } else {
+          resultTitle.textContent = 'Processing Error';
+          resultTitle.className = 'status-error';
+          metricsContainer.style.display = 'none';
+          resultPayload.style.display = 'block';
+          resultPayload.textContent = JSON.stringify(responseData, null, 2);
+        }
+      } catch (err) {
+        resultBox.style.display = 'block';
+        resultTitle.textContent = 'Network Error';
+        resultTitle.className = 'status-error';
+        metricsContainer.style.display = 'none';
+        resultPayload.style.display = 'block';
+        resultPayload.textContent = 'Ensure the backend is running and reachable.';
+      } finally {
+        loader.style.display = 'none';
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

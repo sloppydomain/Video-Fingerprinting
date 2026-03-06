@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+python-multipart
+numpy
+scipy
+librosa
+Pillow
+imagehash
+tqdm
+ffmpeg
