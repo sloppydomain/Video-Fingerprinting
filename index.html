@@ -116,24 +116,29 @@
           const matchData = responseData.data;
           const startSec = matchData.match.start_sec;
           const confidence = matchData.scores.final_match_percent;
+          const isMatch = matchData.decision && matchData.decision.is_match;
 
-          resultTitle.textContent = 'Match Found';
-          resultTitle.className = '';
+          resultTitle.textContent = isMatch ? 'Match Found' : 'No Match Found';
+          resultTitle.className = isMatch ? '' : 'status-error';
           resultPayload.style.display = 'none'; // Hide JSON on success
-          
+
           metricsContainer.style.display = 'grid';
           uiScore.textContent = `${confidence.toFixed(1)}%`;
-          uiTimestamp.textContent = formatTimeDisplay(startSec);
+          uiTimestamp.textContent = isMatch ? formatTimeDisplay(startSec) : '--';
 
-          // Create local URL for immediate playback
-          currentVideoUrl = URL.createObjectURL(longVideoFile);
-          playbackVideo.src = currentVideoUrl;
-          playbackVideo.style.display = 'block';
-          
-          playbackVideo.onloadedmetadata = () => {
-            playbackVideo.currentTime = startSec;
-            playbackVideo.play().catch(e => console.log("Autoplay blocked by browser", e));
-          };
+          if (isMatch) {
+            // Create local URL for immediate playback
+            currentVideoUrl = URL.createObjectURL(longVideoFile);
+            playbackVideo.src = currentVideoUrl;
+            playbackVideo.style.display = 'block';
+
+            playbackVideo.onloadedmetadata = () => {
+              playbackVideo.currentTime = startSec;
+              playbackVideo.play().catch(e => console.log("Autoplay blocked by browser", e));
+            };
+          } else {
+            playbackVideo.style.display = 'none';
+          }
 
         } else {
           resultTitle.textContent = 'Processing Error';
